@@ -281,7 +281,7 @@
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-secondary" onclick="hideModal()">Cancel</button>
                     <button type="button" class="btn btn-primary" onclick="saveItem()">Save Item</button>
                 </div>
             </div>
@@ -290,6 +290,39 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Debug: Check if Bootstrap loaded
+        if (typeof bootstrap === 'undefined') {
+            console.error('Bootstrap JavaScript not loaded');
+            window.bootstrap = {
+                Modal: function(element) {
+                    return {
+                        show: function() {
+                            element.style.display = 'block';
+                            element.classList.add('show');
+                            document.body.classList.add('modal-open');
+                            
+                            // Create backdrop
+                            const backdrop = document.createElement('div');
+                            backdrop.className = 'modal-backdrop fade show';
+                            backdrop.id = 'modal-backdrop-fallback';
+                            document.body.appendChild(backdrop);
+                        },
+                        hide: function() {
+                            element.style.display = 'none';
+                            element.classList.remove('show');
+                            document.body.classList.remove('modal-open');
+                            
+                            // Remove backdrop
+                            const backdrop = document.getElementById('modal-backdrop-fallback');
+                            if (backdrop) backdrop.remove();
+                        }
+                    };
+                }
+            };
+        } else {
+            console.log('Bootstrap loaded successfully');
+        }
+
         // Global variables
         let items = JSON.parse(localStorage.getItem('listItems') || '[]');
         let currentEditId = null;
@@ -297,11 +330,24 @@
 
         // Initialize the app
         document.addEventListener('DOMContentLoaded', function() {
-            itemModal = new bootstrap.Modal(document.getElementById('itemModal'));
+            console.log('App initializing...');
+            
+            // Initialize modal
+            const modalElement = document.getElementById('itemModal');
+            if (modalElement) {
+                itemModal = new bootstrap.Modal(modalElement);
+                console.log('Modal initialized');
+            } else {
+                console.error('Modal element not found');
+            }
+            
+            // Load initial data
             loadItems();
             updateStats();
             updateFilters();
             filterItems();
+            
+            console.log('App initialized with', items.length, 'items');
         });
 
         // Show alert message
@@ -346,13 +392,44 @@
 
         // Show add modal
         function showAddModal() {
+            console.log('showAddModal called');
+            
+            // Initialize modal if not already done
+            if (!itemModal) {
+                const modalElement = document.getElementById('itemModal');
+                if (modalElement) {
+                    itemModal = new bootstrap.Modal(modalElement);
+                    console.log('Modal initialized in showAddModal');
+                } else {
+                    console.error('Modal element not found in showAddModal');
+                    return;
+                }
+            }
+            
             currentEditId = null;
             document.getElementById('modalTitle').textContent = 'Add New Item';
             document.getElementById('itemForm').reset();
             document.getElementById('itemCategory').value = 'General';
             document.getElementById('itemPriority').value = '3';
             updateCategoryDatalist();
-            itemModal.show();
+            
+            try {
+                itemModal.show();
+                console.log('Modal shown');
+            } catch (error) {
+                console.error('Error showing modal:', error);
+                // Fallback: show modal manually
+                const modalEl = document.getElementById('itemModal');
+                modalEl.style.display = 'block';
+                modalEl.classList.add('show');
+                document.body.classList.add('modal-open');
+                
+                // Create backdrop
+                const backdrop = document.createElement('div');
+                backdrop.className = 'modal-backdrop fade show';
+                backdrop.id = 'modal-backdrop-fallback';
+                document.body.appendChild(backdrop);
+            }
         }
 
         // Show edit modal
@@ -379,10 +456,14 @@
 
         // Save item
         function saveItem() {
+            console.log('saveItem called');
+            
             const title = document.getElementById('itemTitle').value.trim();
             const description = document.getElementById('itemDescription').value.trim();
             const category = document.getElementById('itemCategory').value.trim() || 'General';
             const priority = parseInt(document.getElementById('itemPriority').value);
+
+            console.log('Form data:', { title, description, category, priority });
 
             if (!title) {
                 showAlert('Title is required!', 'danger');
@@ -401,6 +482,7 @@
                     item.priority = priority;
                     item.updatedAt = now;
                     showAlert('Item updated successfully!');
+                    console.log('Item updated:', item);
                 }
             } else {
                 // Add new item
@@ -416,14 +498,37 @@
                 };
                 items.push(newItem);
                 showAlert('Item added successfully!');
+                console.log('New item added:', newItem);
             }
 
             saveToStorage();
-            itemModal.hide();
+            hideModal();
             loadItems();
             updateStats();
             updateFilters();
             filterItems();
+        }
+
+        // Hide modal function
+        function hideModal() {
+            try {
+                if (itemModal && itemModal.hide) {
+                    itemModal.hide();
+                } else {
+                    // Fallback manual hide
+                    const modalEl = document.getElementById('itemModal');
+                    modalEl.style.display = 'none';
+                    modalEl.classList.remove('show');
+                    document.body.classList.remove('modal-open');
+                    
+                    // Remove backdrop
+                    const backdrop = document.getElementById('modal-backdrop-fallback');
+                    if (backdrop) backdrop.remove();
+                }
+                console.log('Modal hidden');
+            } catch (error) {
+                console.error('Error hiding modal:', error);
+            }
         }
 
         // Toggle item completion
@@ -704,4 +809,231 @@
             };
             
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `list-manager-backup-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showAlert('Data exported successfully!');
+        }
+
+        // Import data
+        function importData() {
+            const fileInput = document.getElementById('importFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showAlert('Please select a file to import.', 'warning');
+                return;
+            }
+
+            if (!file.name.endsWith('.json')) {
+                showAlert('Please select a valid JSON file.', 'danger');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    
+                    if (!data.items || !Array.isArray(data.items)) {
+                        throw new Error('Invalid file format');
+                    }
+
+                    // Validate and import items
+                    const importedItems = data.items.filter(item => 
+                        item.id && item.title && typeof item.completed === 'boolean'
+                    );
+
+                    if (importedItems.length === 0) {
+                        showAlert('No valid items found in the file.', 'warning');
+                        return;
+                    }
+
+                    // Merge with existing items (avoid duplicates by ID)
+                    const existingIds = new Set(items.map(item => item.id));
+                    const newItems = importedItems.filter(item => !existingIds.has(item.id));
+                    
+                    items = [...items, ...newItems];
+                    saveToStorage();
+                    loadItems();
+                    updateStats();
+                    updateFilters();
+                    filterItems();
+                    
+                    showAlert(`Successfully imported ${newItems.length} new items!`);
+                    fileInput.value = '';
+                    
+                } catch (error) {
+                    showAlert('Error importing file. Please check the file format.', 'danger');
+                    console.error('Import error:', error);
+                }
+            };
+            
+            reader.readAsText(file);
+        }
+
+        // Clear all data
+        function clearAllData() {
+            if (confirm('Are you sure you want to delete ALL items? This cannot be undone!')) {
+                if (confirm('This will permanently delete all your list items. Are you absolutely sure?')) {
+                    items = [];
+                    saveToStorage();
+                    loadItems();
+                    updateStats();
+                    updateFilters();
+                    filterItems();
+                    showAlert('All data has been cleared.', 'warning');
+                }
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl/Cmd + N for new item
+            if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+                e.preventDefault();
+                showAddModal();
+            }
+            
+            // Escape to close modal
+            if (e.key === 'Escape' && itemModal._isShown) {
+                itemModal.hide();
+            }
+            
+            // Enter to save item when modal is open
+            if (e.key === 'Enter' && itemModal._isShown && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                saveItem();
+            }
+        });
+
+        // Auto-save draft as user types
+        let draftTimeout;
+        function saveDraft() {
+            clearTimeout(draftTimeout);
+            draftTimeout = setTimeout(() => {
+                if (itemModal._isShown) {
+                    const draft = {
+                        title: document.getElementById('itemTitle').value,
+                        description: document.getElementById('itemDescription').value,
+                        category: document.getElementById('itemCategory').value,
+                        priority: document.getElementById('itemPriority').value
+                    };
+                    localStorage.setItem('itemDraft', JSON.stringify(draft));
+                }
+            }, 1000);
+        }
+
+        // Load draft when opening modal
+        function loadDraft() {
+            const draft = localStorage.getItem('itemDraft');
+            if (draft && !currentEditId) {
+                const draftData = JSON.parse(draft);
+                if (draftData.title) {
+                    document.getElementById('itemTitle').value = draftData.title;
+                    document.getElementById('itemDescription').value = draftData.description || '';
+                    document.getElementById('itemCategory').value = draftData.category || 'General';
+                    document.getElementById('itemPriority').value = draftData.priority || '3';
+                }
+            }
+        }
+
+        // Clear draft when saving or canceling
+        function clearDraft() {
+            localStorage.removeItem('itemDraft');
+        }
+
+        // Add event listeners for draft saving
+        document.getElementById('itemTitle').addEventListener('input', saveDraft);
+        document.getElementById('itemDescription').addEventListener('input', saveDraft);
+        document.getElementById('itemCategory').addEventListener('input', saveDraft);
+        document.getElementById('itemPriority').addEventListener('change', saveDraft);
+
+        // Enhanced modal events
+        document.getElementById('itemModal').addEventListener('shown.bs.modal', loadDraft);
+        document.getElementById('itemModal').addEventListener('hidden.bs.modal', clearDraft);
+
+        // Sample data for first-time users
+        function addSampleData() {
+            if (items.length === 0) {
+                const sampleItems = [
+                    {
+                        id: generateId(),
+                        title: "Welcome to List Manager!",
+                        description: "This is a sample item to get you started. You can edit or delete it.",
+                        category: "Getting Started",
+                        priority: 3,
+                        completed: false,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    },
+                    {
+                        id: generateId(),
+                        title: "Try adding your own item",
+                        description: "Click the 'Add Item' button to create your first real task.",
+                        category: "Getting Started",
+                        priority: 2,
+                        completed: false,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    },
+                    {
+                        id: generateId(),
+                        title: "Explore the features",
+                        description: "Check out the statistics page and try filtering by category or priority.",
+                        category: "Tutorial",
+                        priority: 1,
+                        completed: true,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    }
+                ];
+                
+                items = sampleItems;
+                saveToStorage();
+            }
+        }
+
+        // Initialize with sample data if needed
+        if (items.length === 0 && !localStorage.getItem('hasVisited')) {
+            addSampleData();
+            localStorage.setItem('hasVisited', 'true');
+            showAlert('Welcome! We\'ve added some sample items to get you started.', 'info');
+        }
+
+        // Performance optimization: Debounce search
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(filterItems, 300);
+        });
+
+        // Add tooltips for better UX
+        function initTooltips() {
+            const tooltips = document.querySelectorAll('[title]');
+            tooltips.forEach(element => {
+                new bootstrap.Tooltip(element);
+            });
+        }
+
+        // Initialize tooltips after items are loaded
+        setTimeout(initTooltips, 1000);
+
+        // Service Worker for offline functionality (optional)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js').then(function(registration) {
+                    console.log('ServiceWorker registration successful');
+                }, function(err) {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
