@@ -1,3 +1,6 @@
+Created via Claude from its website:
+- then copied to here
+
 Publish via:
 - Settings - Pages (on left sidebar), Source: Deploy from a branch, main, save
 
